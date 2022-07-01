@@ -26,12 +26,12 @@ def run_docker_buildx(dockerfile:str,docker_args:List[str],quiet:bool=False,keep
         for line in iter(proc.stdout.readline,b''):
             decoded_line = line.decode('utf-8').strip()
             if not quiet:
-                logger.info(decoded_line)
+                print(decoded_line,flush=True)
             stdout_lines.append(decoded_line)
         for line in iter(proc.stderr.readline,b''):
             decoded_line = line.decode('utf-8').strip()
             if not quiet:
-                logger.info(decoded_line)
+                print(decoded_line,flush=True)
             if decoded_line.startswith('>'):
                 match = failed_stmt_pattern.match(decoded_line)
                 if match is not None:
