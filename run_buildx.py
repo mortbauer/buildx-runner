@@ -1,0 +1,143 @@
+#!/usr/bin/env python3
+import os
+import re
+import sys
+import tempfile
+import logging
+import subprocess
+import argparse
+from typing import List
+
+
+logger = logging.getLogger(__name__)
+
+def run_docker_buildx(dockerfile:str,docker_args:List[str],quiet:bool=False,keep:bool=False):
+    proc = subprocess.Popen(
+        ['docker','buildx','build','--progress=plain','-f',dockerfile]+list(docker_args),
+       stdout=subprocess.PIPE,
+       stderr=subprocess.PIPE,
+    )
+    stdout_lines = []
+    stderr_lines = []
+    failed_stmt_pattern = re.compile('^> \[(.*) [0-9]*/[0-9]*\] (.*):$')
+    build_target = None
+    failed_cmd = None
+    while proc.poll() is None:
+        for line in iter(proc.stdout.readline,b''):
+            decoded_line = line.decode('utf-8').strip()
+            if not quiet:
+                logger.info(decoded_line)
+            stdout_lines.append(decoded_line)
+        for line in iter(proc.stderr.readline,b''):
+            decoded_line = line.decode('utf-8').strip()
+            if not quiet:
+                logger.info(decoded_line)
+            if decoded_line.startswith('>'):
+                match = failed_stmt_pattern.match(decoded_line)
+                if match is not None:
+                    build_target = match.group(1)
+                    failed_cmd = match.group(2)
+                    failed_cmd = re.sub(' +',' ',failed_cmd)
+            stderr_lines.append(decoded_line)
+    returncode = proc.returncode
+    if returncode != 0:
+        if build_target is None or failed_cmd is None:
+            raise Exception(f'Failed getting the target {build_target}:{failed_cmd} {stderr_lines}')
+        env_pattern = re.compile('^ENV ([^ ]*) (.*)$')
+        gen_pattern = re.compile('\\\\\$([A-Za-z0-9]*)')
+        vars = {}
+        added_target = False
+        with tempfile.NamedTemporaryFile(mode='w',dir='.',delete=not keep) as tmpddockerfile: 
+            with open(dockerfile,'r') as _file:
+                orig_dockerfile_content = _file.read()
+                dockerfile_content = re.sub(r" *\\ *\r?\n\n? *"," ",orig_dockerfile_content)
+            for line_nr,line in enumerate(dockerfile_content.splitlines()):
+                if not line.strip():
+                    continue
+                match = env_pattern.match(line)
+                if match is not None:
+                    var = match.group(1) 
+                    val = match.group(2) 
+                    vars[var] = val
+                else:
+                    new_line = line
+                    for var,val in vars.items():
+                        new_line = re.sub(f'\${{?{var}}}?',val,new_line).strip()
+
+                    # replace remaining variables with some wildcard
+                    new_line = gen_pattern.sub('[^ ]*',re.escape(new_line))
+                    logger.debug('LINE: %s',new_line)
+                    match = re.match(new_line,failed_cmd)
+                    if match and not added_target:
+                        added_target = True
+                        logger.info('Added new target at line %s - %s ---- %s',line_nr,new_line,failed_cmd)
+                        tmpddockerfile.write(f'FROM {build_target}\n')
+                    elif match:
+                        raise Exception('Matched multiple lines')
+                tmpddockerfile.write(line)
+                tmpddockerfile.write('\n')
+
+            tmpddockerfile.flush()
+            if added_target:
+                cmd = [
+                    'docker',
+                    'buildx',
+                    'build',
+                    f'--target={build_target}',
+                    '--progress=plain',
+                    '-f',tmpddockerfile.name,
+                ]
+                skip_next = False
+                for item in docker_args:
+                    if item.startswith('--output'):
+                        if not item.startswith('--output='):
+                            skip_next = True
+                        cmd.append('--output')
+                        cmd.append('type=docker')
+                    elif not skip_next:
+                        cmd.append(item)
+                    else:
+                        skip_next = False
+
+                logger.info('Starting modified docker with %s',cmd)
+                proc = subprocess.Popen(
+                   cmd,
+                   stdout=subprocess.PIPE,
+                   stderr=subprocess.PIPE,
+                )
+                stdout,stderr = proc.communicate()
+                sha_pattern = re.compile('^#[0-9]* writing image sha256:([a-z0-9]*) done')
+                sha256 = None
+                decoded_stderr = stderr.decode('utf-8')
+                for line in decoded_stderr.splitlines()[-3:]:
+                    match = sha_pattern.match(line)
+                    if match is not None:
+                        sha256 = match.group(1)
+                if sha256:
+                    print(f'Debug image ready with sha256: {sha256}')
+                else:
+                    print('Failed getting the sha256 %s'%decoded_stderr)
+            else:
+                logger.error('Failed to find failed line for %s',failed_cmd)
+    return returncode
+
+def make_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('dockerfile', help='path to the dockerfile')
+    parser.add_argument('-q','--quiet', dest='quiet', action='store_true', help='silence the docker output')
+    parser.add_argument('-k','--keep', dest='keep', action='store_true', help='keep the modified dockerfile')
+    parser.add_argument('-l','--log-level', dest='log_level', default='WARNING',help='set log level')
+    parser.add_argument('docker_args',nargs=argparse.REMAINDER,help='additional docker args')
+    return parser
+
+def main():
+    parser = make_parser()
+    args = parser.parse_args()
+    kwargs = vars(args)
+    logging.basicConfig(level=kwargs.pop('log_level').upper())
+    returncode = run_docker_buildx(**kwargs)
+    sys.exit(returncode)
+    
+
+if __name__ == '__main__':
+    main()
