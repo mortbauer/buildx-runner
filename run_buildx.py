@@ -12,6 +12,7 @@ from typing import List
 logger = logging.getLogger(__name__)
 
 def run_docker_buildx(dockerfile:str,docker_args:List[str],quiet:bool=False,keep:bool=False):
+    os.environ['PYTHONUNBUFFERED'] = '1'
     proc = subprocess.Popen(
         ['docker','buildx','build','--progress=plain','-f',dockerfile]+list(docker_args),
        stdout=subprocess.PIPE,
@@ -22,10 +23,6 @@ def run_docker_buildx(dockerfile:str,docker_args:List[str],quiet:bool=False,keep
     build_target = None
     failed_cmd = None
     while proc.poll() is None:
-        for line in iter(proc.stdout.readline,b''):
-            decoded_line = line.decode('utf-8').strip()
-            if not quiet:
-                print(decoded_line,flush=True)
         for line in iter(proc.stderr.readline,b''):
             decoded_line = line.decode('utf-8').strip()
             if not quiet:
@@ -42,7 +39,7 @@ def run_docker_buildx(dockerfile:str,docker_args:List[str],quiet:bool=False,keep
         if build_target is None or failed_cmd is None:
             raise Exception(f'Failed getting the target {build_target}:{failed_cmd}')
         env_pattern = re.compile('^ENV ([^ ]*) (.*)$')
-        gen_pattern = re.compile('\\\\\$([A-Za-z0-9]*)')
+        gen_pattern = re.compile('\\\\\$([A-Za-z0-9_]*)')
         vars = {}
         added_target = False
         with tempfile.NamedTemporaryFile(mode='w',dir='.',delete=not keep) as tmpddockerfile: 
@@ -56,7 +53,7 @@ def run_docker_buildx(dockerfile:str,docker_args:List[str],quiet:bool=False,keep
                 if match is not None:
                     var = match.group(1) 
                     val = match.group(2) 
-                    vars[var] = val
+                    vars[var] = val.strip()
                 else:
                     new_line = line
                     for var,val in vars.items():
@@ -132,7 +129,7 @@ def main():
     parser = make_parser()
     args = parser.parse_args()
     kwargs = vars(args)
-    logging.basicConfig(level=kwargs.pop('log_level').upper())
+    logging.basicConfig(format='%(levelname)s:%(asctime)s:%(message)s',level=kwargs.pop('log_level').upper())
     returncode = run_docker_buildx(**kwargs)
     sys.exit(returncode)
     
