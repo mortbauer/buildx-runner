@@ -18,8 +18,6 @@ def run_docker_buildx(dockerfile:str,docker_args:List[str],quiet:bool=False,keep
        stderr=subprocess.PIPE,
     )
     logger.info('Started docker buildx run with %s',docker_args)
-    stdout_lines = []
-    stderr_lines = []
     failed_stmt_pattern = re.compile('^> \[(.*) [0-9]*/[0-9]*\] (.*):$')
     build_target = None
     failed_cmd = None
@@ -28,7 +26,6 @@ def run_docker_buildx(dockerfile:str,docker_args:List[str],quiet:bool=False,keep
             decoded_line = line.decode('utf-8').strip()
             if not quiet:
                 print(decoded_line,flush=True)
-            stdout_lines.append(decoded_line)
         for line in iter(proc.stderr.readline,b''):
             decoded_line = line.decode('utf-8').strip()
             if not quiet:
@@ -39,12 +36,11 @@ def run_docker_buildx(dockerfile:str,docker_args:List[str],quiet:bool=False,keep
                     build_target = match.group(1)
                     failed_cmd = match.group(2)
                     failed_cmd = re.sub(' +',' ',failed_cmd)
-            stderr_lines.append(decoded_line)
     returncode = proc.returncode
     logger.info('Normal docker buildx run finished with %s',returncode)
     if returncode != 0:
         if build_target is None or failed_cmd is None:
-            raise Exception(f'Failed getting the target {build_target}:{failed_cmd} {stderr_lines}')
+            raise Exception(f'Failed getting the target {build_target}:{failed_cmd}')
         env_pattern = re.compile('^ENV ([^ ]*) (.*)$')
         gen_pattern = re.compile('\\\\\$([A-Za-z0-9]*)')
         vars = {}
