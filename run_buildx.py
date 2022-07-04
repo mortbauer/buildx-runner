@@ -17,6 +17,7 @@ def run_docker_buildx(dockerfile:str,docker_args:List[str],quiet:bool=False,keep
        stdout=subprocess.PIPE,
        stderr=subprocess.PIPE,
     )
+    logger.info('Started docker buildx run with %s',docker_args)
     stdout_lines = []
     stderr_lines = []
     failed_stmt_pattern = re.compile('^> \[(.*) [0-9]*/[0-9]*\] (.*):$')
