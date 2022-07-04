@@ -40,6 +40,7 @@ def run_docker_buildx(dockerfile:str,docker_args:List[str],quiet:bool=False,keep
                     failed_cmd = re.sub(' +',' ',failed_cmd)
             stderr_lines.append(decoded_line)
     returncode = proc.returncode
+    logger.info('Normal docker buildx run finished with %s',returncode)
     if returncode != 0:
         if build_target is None or failed_cmd is None:
             raise Exception(f'Failed getting the target {build_target}:{failed_cmd} {stderr_lines}')
