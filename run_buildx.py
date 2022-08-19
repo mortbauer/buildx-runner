@@ -3,6 +3,7 @@ import os
 import re
 import sys
 import io
+import shutil
 import tarfile
 import tempfile
 import logging
