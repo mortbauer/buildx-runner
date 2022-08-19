@@ -65,7 +65,7 @@ def run_docker_buildx(dockerfile:str,path:str,docker_args:List[str],quiet:bool=F
             gen_pattern = re.compile('\\\\\$([A-Za-z0-9_]*)')
             vars = {}
             added_target = False
-            with tempfile.NamedTemporaryFile(mode='w',dir='.',delete=not keep) as tmpddockerfile: 
+            with tempfile.NamedTemporaryFile(mode='w',dir=path,delete=not keep) as tmpddockerfile: 
                 if tempdir is None:
                     dockerfile_path = dockerfile
                 else:
@@ -108,6 +108,7 @@ def run_docker_buildx(dockerfile:str,path:str,docker_args:List[str],quiet:bool=F
                         f'--target={build_target}',
                         '--progress=plain',
                         '-f',tmpddockerfile.name,
+                        path,
                     ]
                     skip_next = False
                     for item in docker_args:
