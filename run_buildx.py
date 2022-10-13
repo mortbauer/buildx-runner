@@ -90,7 +90,7 @@ def run_docker_buildx(dockerfile:str,path:str,docker_args:List[str],quiet:bool=F
                         new_line = re.sub(f'\${{?{var}}}?',val,new_line).strip()
 
                     # replace multiple whitespaces with one
-                    failed_cmd = re.sub('\s+',' ',failed_cmd)
+                    new_line = re.sub('\s+',' ',new_line)
                     # replace remaining variables with some wildcard
                     new_line = gen_pattern.sub('[^ ]*',re.escape(new_line))
                     logger.debug('LINE: %s',new_line)
