@@ -59,9 +59,9 @@ def run_docker_buildx(dockerfile:str,path:str,docker_args:List[str],quiet:bool=F
                         failed_cmd = re.sub(' +',' ',failed_cmd)
         returncode = proc.returncode
         logger.info('Normal docker buildx run finished with %s',returncode)
-        # replace multiple whitespaces with one
-        failed_cmd = re.sub('\s+',' ',failed_cmd)
         if returncode != 0:
+            # replace multiple whitespaces with one
+            failed_cmd = re.sub('\s+',' ',failed_cmd)
             if build_target is None or failed_cmd is None:
                 raise Exception(f'Failed getting the target {build_target}:{failed_cmd}')
             env_pattern = re.compile('^ENV ([^ ]*) (.*)$')
