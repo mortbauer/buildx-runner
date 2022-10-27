@@ -68,43 +68,42 @@ def run_docker_buildx(dockerfile:str,path:str,docker_args:List[str],quiet:bool=F
             gen_pattern = re.compile('\\\\\$([A-Za-z0-9_]*)')
             vars = {}
             added_target = False
-            tmpddockerfile = tempfile.NamedTemporaryFile(mode='w',dir=path,delete=False)
-            if tempdir is None:
-                dockerfile_path = dockerfile
-            else:
-                dockerfile_path = os.path.join(tempdir,dockerfile)
-            with open(dockerfile_path,'r') as _file:
-                orig_dockerfile_content = _file.read()
-                dockerfile_content = re.sub(r" *\\ *\r?\n\n? *"," ",orig_dockerfile_content)
-            for line_nr,line in enumerate(dockerfile_content.splitlines()):
-                if not line.strip():
-                    continue
-                match = env_pattern.match(line)
-                if match is not None:
-                    var = match.group(1) 
-                    val = match.group(2) 
-                    vars[var] = val.strip()
+            tmpddockerfile_path = os.path.join(path,'Dockerfile')
+            with open(tmpddockerfile_path,'w') as tmpddockerfile:
+                if tempdir is None:
+                    dockerfile_path = dockerfile
                 else:
-                    new_line = line
-                    for var,val in vars.items():
-                        new_line = re.sub(f'\${{?{var}}}?',val,new_line).strip()
+                    dockerfile_path = os.path.join(tempdir,dockerfile)
+                with open(dockerfile_path,'r') as _file:
+                    orig_dockerfile_content = _file.read()
+                    dockerfile_content = re.sub(r" *\\ *\r?\n\n? *"," ",orig_dockerfile_content)
+                for line_nr,line in enumerate(dockerfile_content.splitlines()):
+                    if  line.strip():
+                        match = env_pattern.match(line)
+                        if match is not None:
+                            var = match.group(1) 
+                            val = match.group(2) 
+                            vars[var] = val.strip()
+                        else:
+                            new_line = line
+                            for var,val in vars.items():
+                                new_line = re.sub(f'\${{?{var}}}?',val,new_line).strip()
 
-                    # replace multiple whitespaces with one
-                    new_line = re.sub('\s+',' ',new_line)
-                    # replace remaining variables with some wildcard
-                    new_line = gen_pattern.sub('[^ ]*',re.escape(new_line))
-                    logger.debug('LINE: %s',new_line)
-                    match = re.match(new_line,failed_cmd)
-                    if match and not added_target:
-                        added_target = True
-                        logger.info('Added new target at line %s - %s ---- %s',line_nr,new_line,failed_cmd)
-                        tmpddockerfile.write(f'FROM {build_target}\n')
-                    elif match:
-                        raise Exception('Matched multiple lines')
-                tmpddockerfile.write(line)
-                tmpddockerfile.write('\n')
+                            # replace multiple whitespaces with one
+                            new_line = re.sub('\s+',' ',new_line)
+                            # replace remaining variables with some wildcard
+                            new_line = gen_pattern.sub('[^ ]*',re.escape(new_line))
+                            logger.debug('LINE: %s',new_line)
+                            match = re.match(new_line,failed_cmd)
+                            if match and not added_target:
+                                added_target = True
+                                logger.info('Added new target at line %s - %s ---- %s',line_nr,new_line,failed_cmd)
+                                tmpddockerfile.write(f'FROM {build_target}\n')
+                            elif match:
+                                raise Exception('Matched multiple lines')
+                    tmpddockerfile.write(line)
+                    tmpddockerfile.write('\n')
 
-            tmpddockerfile.flush()
             if added_target:
                 cmd = [
                     'docker',
@@ -112,7 +111,7 @@ def run_docker_buildx(dockerfile:str,path:str,docker_args:List[str],quiet:bool=F
                     'build',
                     f'--target={build_target}',
                     '--progress=plain',
-                    '-f',tmpddockerfile.name,
+                    '-f',tmpddockerfile_path,
                     path,
                 ]
                 skip_next = False
@@ -127,16 +126,18 @@ def run_docker_buildx(dockerfile:str,path:str,docker_args:List[str],quiet:bool=F
                     else:
                         skip_next = False
 
+                print('Run cmd: ' + (' '.join(cmd)))
                 logger.info('Starting modified docker with %s',cmd)
-                tmpddockerfile.close()
                 proc = subprocess.Popen(
-                   cmd,
+                   ' '.join(cmd),
                    stdout=subprocess.PIPE,
                    stderr=subprocess.PIPE,
                    env=os.environ,
+                   shell=True,
                 )
                 sha_pattern = re.compile('^#[0-9]* writing image sha256:([a-z0-9]*) done')
                 sha256 = None
+                decoded_line = None
                 while proc.poll() is None:
                     for line in iter(proc.stderr.readline,b''):
                         decoded_line = line.decode('utf-8').strip()
@@ -153,15 +154,15 @@ def run_docker_buildx(dockerfile:str,path:str,docker_args:List[str],quiet:bool=F
                                 failed_cmd = re.sub(' +',' ',failed_cmd)
                 stdout,stderr = proc.communicate()
                 if sha256:
-                    os.remove(tmpddockerfile.name)
+                    os.remove(tmpddockerfile_path)
                     print(f'Debug image ready with sha256: {sha256}')
                 else:
-                    print('Failed getting the sha256 %s'%decoded_stderr.splitlines()[-1])
+                    print('Failed getting the sha256 %s'%decoded_line)
                     print('Run cmd: ' + (' '.join(cmd)))
             else:
                 logger.error('Failed to find failed line for %s',failed_cmd)
     finally:
-        if tempdir is not None:
+        if tempdir is not None and not keep:
             shutil.rmtree(tempdir)
     return returncode
 
