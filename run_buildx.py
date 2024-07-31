@@ -25,7 +25,7 @@ def get_file_from_tar(tar,filename):
     file_content_byte = None
     for name in tar.getnames():
         if filename in name: 
-            file_content_byte = tar.extractfile(name).read()
+            file_content_byte = tar.extractfile(name,filter='data').read()
     return file_content_byte
 
 def run_docker_buildx(dockerfile:str,path:str,docker_args:List[str],quiet:bool=False,keep:bool=False):
@@ -34,7 +34,7 @@ def run_docker_buildx(dockerfile:str,path:str,docker_args:List[str],quiet:bool=F
     if path == '-':
         tar = get_context_from_stdin()
         tempdir = tempfile.mkdtemp()
-        tar.extractall(tempdir)
+        tar.extractall(tempdir,filter='data')
         path = tempdir
     try:
         proc = subprocess.Popen(
@@ -43,7 +43,7 @@ def run_docker_buildx(dockerfile:str,path:str,docker_args:List[str],quiet:bool=F
            stderr=subprocess.PIPE,
         )
         logger.info('Started docker buildx run with %s',docker_args)
-        failed_stmt_pattern = re.compile('^> \[(.*) [0-9]*/[0-9]*\] (.*):$')
+        failed_stmt_pattern = re.compile(r'^> \[(.*) [0-9]*/[0-9]*\] (.*):$')
         build_target = None
         failed_cmd = None
         while proc.poll() is None:
@@ -61,11 +61,11 @@ def run_docker_buildx(dockerfile:str,path:str,docker_args:List[str],quiet:bool=F
         logger.info('Normal docker buildx run finished with %s',returncode)
         if returncode != 0:
             # replace multiple whitespaces with one
-            failed_cmd = re.sub('\s+',' ',failed_cmd)
+            failed_cmd = re.sub(r'\s+',' ',failed_cmd)
             if build_target is None or failed_cmd is None:
                 raise Exception(f'Failed getting the target {build_target}:{failed_cmd}')
-            env_pattern = re.compile('^ENV ([^ ]*) (.*)$')
-            gen_pattern = re.compile('\\\\\$([A-Za-z0-9_]*)')
+            env_pattern = re.compile(r'^ENV ([^ ]*) (.*)$')
+            gen_pattern = re.compile(r'\\\\\$([A-Za-z0-9_]*)')
             vars = {}
             added_target = False
             tmpddockerfile = tempfile.NamedTemporaryFile(mode='w',dir=path,delete=False)
@@ -87,10 +87,10 @@ def run_docker_buildx(dockerfile:str,path:str,docker_args:List[str],quiet:bool=F
                 else:
                     new_line = line
                     for var,val in vars.items():
-                        new_line = re.sub(f'\${{?{var}}}?',val,new_line).strip()
+                        new_line = re.sub(rf'\${{?{var}}}?',val,new_line).strip()
 
                     # replace multiple whitespaces with one
-                    new_line = re.sub('\s+',' ',new_line)
+                    new_line = re.sub(r'\s+',' ',new_line)
                     # replace remaining variables with some wildcard
                     new_line = gen_pattern.sub('[^ ]*',re.escape(new_line))
                     logger.debug('LINE: %s',new_line)
@@ -135,7 +135,7 @@ def run_docker_buildx(dockerfile:str,path:str,docker_args:List[str],quiet:bool=F
                    stderr=subprocess.PIPE,
                    env=os.environ,
                 )
-                sha_pattern = re.compile('^#[0-9]* writing image sha256:([a-z0-9]*) done')
+                sha_pattern = re.compile(r'^#[0-9]* writing image sha256:([a-z0-9]*) done')
                 sha256 = None
                 while proc.poll() is None:
                     for line in iter(proc.stderr.readline,b''):
