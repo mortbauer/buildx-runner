@@ -156,7 +156,7 @@ def run_docker_buildx(dockerfile:str,path:str,docker_args:List[str],quiet:bool=F
                     os.remove(tmpddockerfile.name)
                     print(f'Debug image ready with sha256: {sha256}')
                 else:
-                    print('Failed getting the sha256 %s'%decoded_stderr.splitlines()[-1])
+                    print('Failed getting the sha256 %s'%decoded_line)
                     print('Run cmd: ' + (' '.join(cmd)))
             else:
                 logger.error('Failed to find failed line for %s',failed_cmd)
